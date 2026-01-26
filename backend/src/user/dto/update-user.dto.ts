@@ -27,4 +27,8 @@ export class UpdateUserDto {
     message: 'Name must be between 2 and 100 characters long',
   })
   name?: string;
+
+  @IsString()
+  @IsOptional()
+  refreshToken?: string | null;
 }

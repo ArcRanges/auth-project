@@ -13,9 +13,16 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { UserResponseDto } from '../user/dto/user-response.dto';
 import { UserService } from '../user/user.service';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+
+interface JwtPayloadUser {
+  userId: string;
+  email: string;
+}
 
 @Controller('auth')
 export class AuthController {
@@ -36,13 +43,30 @@ export class AuthController {
     return this.authService.login(loginDto);
   }
 
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  async refresh(
+    @Body() refreshTokenDto: RefreshTokenDto,
+  ): Promise<{ access_token: string }> {
+    return this.authService.refreshAccessToken(refreshTokenDto.refreshToken);
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async logout(@CurrentUser() user: JwtPayloadUser): Promise<void> {
+    await this.authService.logout(user.userId);
+  }
+
   @Get('profile')
   @UseGuards(JwtAuthGuard)
-  async getProfile(@Request() req): Promise<UserResponseDto> {
-    const user = await this.userService.findOne(req.user.userId);
-    if (!user) {
+  async getProfile(
+    @CurrentUser() user: JwtPayloadUser,
+  ): Promise<UserResponseDto> {
+    const currentUser = await this.userService.findOne(user.userId);
+    if (!currentUser) {
       throw new NotFoundException('User not found');
     }
-    return new UserResponseDto(user);
+    return new UserResponseDto(currentUser);
   }
 }
