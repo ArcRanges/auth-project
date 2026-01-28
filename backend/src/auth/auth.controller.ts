@@ -4,10 +4,8 @@ import {
   Body,
   Get,
   UseGuards,
-  Request,
   HttpCode,
   HttpStatus,
-  NotFoundException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -18,6 +16,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { UserResponseDto } from '../user/dto/user-response.dto';
 import { UserService } from '../user/user.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { UserNotFoundException } from '../common/exceptions/user-not-found.exception';
 
 interface JwtPayloadUser {
   userId: string;
@@ -65,7 +64,7 @@ export class AuthController {
   ): Promise<UserResponseDto> {
     const currentUser = await this.userService.findOne(user.userId);
     if (!currentUser) {
-      throw new NotFoundException('User not found');
+      throw new UserNotFoundException(user.userId);
     }
     return new UserResponseDto(currentUser);
   }

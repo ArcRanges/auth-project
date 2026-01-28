@@ -1,9 +1,11 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from '@prisma/client';
 import { hashPassword } from '../common/utils/password.util';
+import { DuplicateEmailException } from '../common/exceptions/duplicate-email.exception';
+import { UserNotFoundException } from '../common/exceptions/user-not-found.exception';
 
 @Injectable()
 export class UserService {
@@ -13,7 +15,7 @@ export class UserService {
     // Check if user with email already exists
     const existingUser = await this.findByEmail(data.email);
     if (existingUser) {
-      throw new ConflictException('User with this email already exists');
+      throw new DuplicateEmailException(data.email);
     }
 
     const hashedPassword = await hashPassword(data.password);
@@ -42,6 +44,12 @@ export class UserService {
   }
 
   async update(id: string, data: UpdateUserDto): Promise<User> {
+    // Verify user exists
+    const existingUser = await this.findOne(id);
+    if (!existingUser) {
+      throw new UserNotFoundException(id);
+    }
+
     const updateData = { ...data };
 
     // Hash password if it's being updated
@@ -56,6 +64,12 @@ export class UserService {
   }
 
   async remove(id: string): Promise<User> {
+    // Verify user exists
+    const existingUser = await this.findOne(id);
+    if (!existingUser) {
+      throw new UserNotFoundException(id);
+    }
+
     return this.prisma.user.delete({
       where: { id },
     });

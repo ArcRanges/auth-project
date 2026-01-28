@@ -7,7 +7,6 @@ import {
   Delete,
   HttpCode,
   HttpStatus,
-  NotFoundException,
   ClassSerializerInterceptor,
   UseInterceptors,
   UseGuards,
@@ -17,6 +16,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { UserNotFoundException } from '../common/exceptions/user-not-found.exception';
 
 interface JwtPayloadUser {
   userId: string;
@@ -41,7 +41,7 @@ export class UserController {
   ): Promise<UserResponseDto> {
     const currentUser = await this.userService.findOne(user.userId);
     if (!currentUser) {
-      throw new NotFoundException('User not found');
+      throw new UserNotFoundException(user.userId);
     }
     return new UserResponseDto(currentUser);
   }
@@ -50,7 +50,7 @@ export class UserController {
   async findOne(@Param('id') id: string): Promise<UserResponseDto> {
     const user = await this.userService.findOne(id);
     if (!user) {
-      throw new NotFoundException(`User with ID ${id} not found`);
+      throw new UserNotFoundException(id);
     }
     return new UserResponseDto(user);
   }

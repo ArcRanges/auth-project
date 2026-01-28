@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import { RegisterDto } from './dto/register.dto';
@@ -10,6 +6,8 @@ import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { UserResponseDto } from '../user/dto/user-response.dto';
 import { comparePassword, hashPassword } from '../common/utils/password.util';
+import { InvalidCredentialsException } from '../common/exceptions/invalid-credentials.exception';
+import { UserNotFoundException } from '../common/exceptions/user-not-found.exception';
 
 @Injectable()
 export class AuthService {
@@ -34,9 +32,6 @@ export class AuthService {
 
   async login(loginDto: LoginDto): Promise<AuthResponseDto> {
     const user = await this.validateUser(loginDto.email, loginDto.password);
-    if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
     const { accessToken, refreshToken } = await this.generateTokens(
       user.id,
       user.email,
@@ -53,13 +48,13 @@ export class AuthService {
     const user = await this.userService.findByEmail(email);
 
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new InvalidCredentialsException();
     }
 
     const isPasswordValid = await comparePassword(password, user.password);
 
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new InvalidCredentialsException();
     }
 
     return user;
@@ -72,7 +67,11 @@ export class AuthService {
       const payload = this.jwtService.verify(refreshToken);
 
       const user = await this.userService.findOne(payload.sub);
-      if (!user || !user.refreshToken) {
+      if (!user) {
+        throw new UserNotFoundException(payload.sub);
+      }
+
+      if (!user.refreshToken) {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
@@ -88,6 +87,12 @@ export class AuthService {
       const accessToken = this.generateAccessToken(user.id, user.email);
       return { access_token: accessToken };
     } catch (error) {
+      if (
+        error instanceof UserNotFoundException ||
+        error instanceof UnauthorizedException
+      ) {
+        throw error;
+      }
       throw new UnauthorizedException('Invalid refresh token');
     }
   }
