@@ -6,6 +6,8 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  UseInterceptors,
+  ClassSerializerInterceptor,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -31,6 +33,7 @@ interface JwtPayloadUser {
 
 @ApiTags('Authentication')
 @Controller('auth')
+@UseInterceptors(ClassSerializerInterceptor)
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
