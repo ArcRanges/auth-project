@@ -9,6 +9,11 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Use X-Forwarded-For / proxy IP when deployed behind a reverse proxy (nginx, fly.io, etc.)
+  if ((process.env.TRUST_PROXY ?? 'false').toLowerCase() === 'true') {
+    (app.getHttpAdapter().getInstance() as any).set('trust proxy', 1);
+  }
+
   // Apply global exception filters
   app.useGlobalFilters(new PrismaExceptionFilter(), new HttpExceptionFilter());
 

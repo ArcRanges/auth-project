@@ -33,6 +33,7 @@ import { UserService } from '../user/user.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UserNotFoundException } from '../common/exceptions/user-not-found.exception';
 import { SessionService } from './services/session.service';
+import { ApiRateLimit } from '../common/decorators/api-rate-limit.decorator';
 
 interface JwtPayloadUser {
   userId: string;
@@ -59,6 +60,7 @@ export class AuthController {
   })
   @ApiResponse({ status: 409, description: 'Email already exists' })
   @ApiResponse({ status: 400, description: 'Validation error' })
+  @ApiRateLimit({ ttl: 60, limit: 3 })
   async register(@Body() registerDto: RegisterDto): Promise<AuthResponseDto> {
     return this.authService.register(registerDto);
   }
@@ -72,17 +74,16 @@ export class AuthController {
     type: AuthResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  @ApiRateLimit({ ttl: 60, limit: 5 })
   async login(
     @Req() req: Request,
     @Body() loginDto: LoginDto,
   ): Promise<AuthResponseDto> {
-    if (req.headers?.['user-agent']) {
-      return this.authService.login(loginDto, {
-        ip: req.ip,
-        userAgent: req.headers['user-agent'],
-      });
-    }
-    throw new Error('User-Agent header is missing');
+    const userAgent = req.get('user-agent')?.trim();
+    return this.authService.login(loginDto, {
+      ip: req.ip,
+      userAgent: userAgent ? userAgent.slice(0, 512) : undefined,
+    });
   }
 
   @Post('refresh')
@@ -101,6 +102,7 @@ export class AuthController {
     },
   })
   @ApiResponse({ status: 401, description: 'Invalid refresh token' })
+  @ApiRateLimit({ ttl: 60, limit: 10 })
   async refresh(
     @Body() refreshTokenDto: RefreshTokenDto,
   ): Promise<{ access_token: string }> {
