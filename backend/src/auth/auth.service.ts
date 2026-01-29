@@ -5,10 +5,11 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { UserResponseDto } from '../user/dto/user-response.dto';
-import { comparePassword, hashPassword } from '../common/utils/password.util';
+import { comparePassword } from '../common/utils/password.util';
 import { InvalidCredentialsException } from '../common/exceptions/invalid-credentials.exception';
 import { UserNotFoundException } from '../common/exceptions/user-not-found.exception';
 import { TokenBlacklistService } from './services/token-blacklist.service';
+import { SessionService } from './services/session.service';
 
 @Injectable()
 export class AuthService {
@@ -16,6 +17,7 @@ export class AuthService {
     private userService: UserService,
     private jwtService: JwtService,
     private readonly tokenBlacklistService: TokenBlacklistService,
+    private readonly sessionService: SessionService,
   ) {}
 
   async register(registerDto: RegisterDto): Promise<AuthResponseDto> {
@@ -23,8 +25,8 @@ export class AuthService {
     const { accessToken, refreshToken } = await this.generateTokens(
       user.id,
       user.email,
+      undefined,
     );
-    await this.updateRefreshToken(user.id, refreshToken);
     return new AuthResponseDto(
       accessToken,
       refreshToken,
@@ -32,13 +34,16 @@ export class AuthService {
     );
   }
 
-  async login(loginDto: LoginDto): Promise<AuthResponseDto> {
+  async login(
+    loginDto: LoginDto,
+    meta?: { ip?: string; userAgent?: string },
+  ): Promise<AuthResponseDto> {
     const user = await this.validateUser(loginDto.email, loginDto.password);
     const { accessToken, refreshToken } = await this.generateTokens(
       user.id,
       user.email,
+      meta,
     );
-    await this.updateRefreshToken(user.id, refreshToken);
     return new AuthResponseDto(
       accessToken,
       refreshToken,
@@ -70,25 +75,26 @@ export class AuthService {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
-      const payload = this.jwtService.verify(refreshToken);
+      const payload = this.jwtService.verify(refreshToken) as {
+        sub: string;
+        email: string;
+        sid?: string;
+      };
 
       const user = await this.userService.findOne(payload.sub);
       if (!user) {
         throw new UserNotFoundException(payload.sub);
       }
 
-      if (!user.refreshToken) {
+      if (!payload.sid) {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
-      const isRefreshTokenValid = await comparePassword(
+      await this.sessionService.validateRefreshToken({
+        userId: user.id,
+        sessionId: payload.sid,
         refreshToken,
-        user.refreshToken,
-      );
-
-      if (!isRefreshTokenValid) {
-        throw new UnauthorizedException('Invalid refresh token');
-      }
+      });
 
       const accessToken = this.generateAccessToken(user.id, user.email);
       return { access_token: accessToken };
@@ -120,37 +126,63 @@ export class AuthService {
       if (ttl) {
         await this.tokenBlacklistService.addToBlacklist(refreshToken, ttl);
       }
-    }
 
-    await this.userService.update(userId, { refreshToken: null });
+      const sessionId = this.getSessionIdFromToken(refreshToken);
+      await this.sessionService.tryDeleteSessionFromRefreshToken({
+        userId,
+        sessionId,
+      });
+    }
   }
 
   private async generateTokens(
     userId: string,
     email: string,
+    meta?: { ip?: string; userAgent?: string },
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    const payload = { sub: userId, email };
+    const accessPayload = { sub: userId, email };
+    const sessionId = this.sessionService.newSessionId();
+    const refreshPayload = { sub: userId, email, sid: sessionId };
 
-    const accessToken = this.jwtService.sign(payload);
+    const accessExpiresIn = (process.env.JWT_EXPIRES_IN ?? '1h') as any;
+    const refreshExpiresIn = (process.env.JWT_REFRESH_EXPIRES_IN ?? '7d') as any;
 
-    const refreshToken = this.jwtService.sign(payload);
+    const accessToken = this.jwtService.sign(accessPayload, {
+      expiresIn: accessExpiresIn,
+    });
+
+    const refreshToken = this.jwtService.sign(refreshPayload, {
+      expiresIn: refreshExpiresIn,
+    });
+
+    const expiresAtMs = this.getExpiresAtMs(refreshToken);
+    if (!expiresAtMs) {
+      throw new UnauthorizedException('Failed to create session');
+    }
+
+    await this.sessionService.createSession({
+      sessionId,
+      userId,
+      refreshToken,
+      expiresAtMs,
+      ip: meta?.ip,
+      userAgent: meta?.userAgent,
+    });
 
     return { accessToken, refreshToken };
   }
 
   private generateAccessToken(userId: string, email: string): string {
     const payload = { sub: userId, email };
-    return this.jwtService.sign(payload);
+    return this.jwtService.sign(payload, {
+      expiresIn: (process.env.JWT_EXPIRES_IN ?? '1h') as any,
+    });
   }
 
-  private async updateRefreshToken(
-    userId: string,
-    refreshToken: string,
-  ): Promise<void> {
-    const hashedRefreshToken = await hashPassword(refreshToken);
-    await this.userService.update(userId, {
-      refreshToken: hashedRefreshToken,
-    });
+  private getExpiresAtMs(token: string): number | undefined {
+    const decoded = this.jwtService.decode(token) as { exp?: number } | null;
+    if (!decoded?.exp) return undefined;
+    return decoded.exp * 1000;
   }
 
   private getRemainingTtlSeconds(token: string): number | undefined {
@@ -161,5 +193,10 @@ export class AuthService {
     if (remainingMs <= 0) return undefined;
 
     return Math.max(1, Math.ceil(remainingMs / 1000));
+  }
+
+  private getSessionIdFromToken(token: string): string | undefined {
+    const decoded = this.jwtService.decode(token) as { sid?: string } | null;
+    return decoded?.sid;
   }
 }
