@@ -8,12 +8,14 @@ import { UserResponseDto } from '../user/dto/user-response.dto';
 import { comparePassword, hashPassword } from '../common/utils/password.util';
 import { InvalidCredentialsException } from '../common/exceptions/invalid-credentials.exception';
 import { UserNotFoundException } from '../common/exceptions/user-not-found.exception';
+import { TokenBlacklistService } from './services/token-blacklist.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private userService: UserService,
     private jwtService: JwtService,
+    private readonly tokenBlacklistService: TokenBlacklistService,
   ) {}
 
   async register(registerDto: RegisterDto): Promise<AuthResponseDto> {
@@ -64,6 +66,10 @@ export class AuthService {
     refreshToken: string,
   ): Promise<{ access_token: string }> {
     try {
+      if (await this.tokenBlacklistService.isBlacklisted(refreshToken)) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
       const payload = this.jwtService.verify(refreshToken);
 
       const user = await this.userService.findOne(payload.sub);
@@ -97,7 +103,25 @@ export class AuthService {
     }
   }
 
-  async logout(userId: string): Promise<void> {
+  async logout(
+    userId: string,
+    accessToken?: string,
+    refreshToken?: string,
+  ): Promise<void> {
+    if (accessToken) {
+      const ttl = this.getRemainingTtlSeconds(accessToken);
+      if (ttl) {
+        await this.tokenBlacklistService.addToBlacklist(accessToken, ttl);
+      }
+    }
+
+    if (refreshToken) {
+      const ttl = this.getRemainingTtlSeconds(refreshToken);
+      if (ttl) {
+        await this.tokenBlacklistService.addToBlacklist(refreshToken, ttl);
+      }
+    }
+
     await this.userService.update(userId, { refreshToken: null });
   }
 
@@ -127,5 +151,15 @@ export class AuthService {
     await this.userService.update(userId, {
       refreshToken: hashedRefreshToken,
     });
+  }
+
+  private getRemainingTtlSeconds(token: string): number | undefined {
+    const decoded = this.jwtService.decode(token) as { exp?: number } | null;
+    if (!decoded?.exp) return undefined;
+
+    const remainingMs = decoded.exp * 1000 - Date.now();
+    if (remainingMs <= 0) return undefined;
+
+    return Math.max(1, Math.ceil(remainingMs / 1000));
   }
 }

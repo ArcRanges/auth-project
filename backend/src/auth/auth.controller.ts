@@ -8,6 +8,7 @@ import {
   HttpStatus,
   UseInterceptors,
   ClassSerializerInterceptor,
+  Req,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -15,11 +16,13 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { LogoutDto } from './dto/logout.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { UserResponseDto } from '../user/dto/user-response.dto';
 import { UserService } from '../user/user.service';
@@ -96,8 +99,24 @@ export class AuthController {
   @ApiOperation({ summary: 'Logout and invalidate refresh token' })
   @ApiResponse({ status: 204, description: 'Logout successful' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async logout(@CurrentUser() user: JwtPayloadUser): Promise<void> {
-    await this.authService.logout(user.userId);
+  async logout(
+    @Req() req: Request,
+    @CurrentUser() user: JwtPayloadUser,
+    @Body() logoutDto: LogoutDto,
+  ): Promise<void> {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+      throw new Error('Authorization header is missing');
+    }
+
+    const accessToken = authHeader.slice('Bearer '.length).trim();
+
+    await this.authService.logout(
+      user.userId,
+      accessToken,
+      logoutDto?.refreshToken,
+    );
   }
 
   @Get('profile')
