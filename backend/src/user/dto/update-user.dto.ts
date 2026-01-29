@@ -48,7 +48,4 @@ export class UpdateUserDto {
   })
   name?: string;
 
-  @IsString()
-  @IsOptional()
-  refreshToken?: string | null;
 }

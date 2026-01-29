@@ -36,9 +36,6 @@ export class UserResponseDto {
   @Exclude()
   password: string;
 
-  @Exclude()
-  refreshToken: string | null;
-
   constructor(partial: Partial<UserResponseDto>) {
     Object.assign(this, partial);
   }
