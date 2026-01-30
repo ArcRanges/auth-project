@@ -35,7 +35,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         ? authHeader.slice('Bearer '.length).trim()
         : undefined;
 
-    if (token && (await this.tokenBlacklistService.isBlacklisted(token))) {
+    // Skip blacklist check for logout endpoint since it's the one that blacklists the token
+    const isLogoutEndpoint =
+      req.path === '/auth/logout' && req.method === 'POST';
+
+    if (
+      token &&
+      !isLogoutEndpoint &&
+      (await this.tokenBlacklistService.isBlacklisted(token))
+    ) {
       throw new UnauthorizedException('Token is blacklisted');
     }
 
@@ -54,14 +62,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Invalid token');
     }
 
-    try {
-      await this.sessionService.assertSessionActiveAndTouchIfStale({
-        userId: payload.sub,
-        sessionId,
-      });
-    } catch (error) {
-      if (error instanceof UnauthorizedException) throw error;
-      throw new UnauthorizedException('Unauthorized');
+    // Skip session validation for logout endpoint since it should work even if session is deleted
+    if (!isLogoutEndpoint) {
+      try {
+        await this.sessionService.assertSessionActiveAndTouchIfStale({
+          userId: payload.sub,
+          sessionId,
+        });
+      } catch (error) {
+        if (error instanceof UnauthorizedException) throw error;
+        throw new UnauthorizedException('Unauthorized');
+      }
     }
 
     return { userId: payload.sub, email: payload.email, sessionId };
