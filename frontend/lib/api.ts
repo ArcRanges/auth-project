@@ -150,14 +150,23 @@ class ApiClient {
   }
 
   async revokeSession(sessionId: string): Promise<void> {
-    return this.request<void>(`/auth/current/sessions/${encodeURIComponent(sessionId)}`, {
-      method: "DELETE",
-    });
+    return this.request<void>(
+      `/auth/current/sessions/${encodeURIComponent(sessionId)}`,
+      {
+        method: "DELETE",
+      },
+    );
   }
 
   async revokeOtherSessions(): Promise<void> {
     return this.request<void>("/auth/current/sessions/revoke-others", {
       method: "POST",
+    });
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return this.request<User[]>("/users", {
+      method: "GET",
     });
   }
 }
