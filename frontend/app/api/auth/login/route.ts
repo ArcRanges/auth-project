@@ -10,6 +10,7 @@ type BackendUser = {
 type BackendAuthResponse = {
   access_token?: string;
   refresh_token?: string;
+  session_id?: string;
   user?: BackendUser;
 };
 
@@ -54,6 +55,17 @@ export async function POST(request: NextRequest) {
       response.cookies.set({
         name: "refresh_token",
         value: data.refresh_token,
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+      });
+    }
+
+    if (data?.session_id) {
+      response.cookies.set({
+        name: "session_id",
+        value: data.session_id,
         httpOnly: true,
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production",

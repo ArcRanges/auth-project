@@ -10,6 +10,7 @@ type BackendUser = {
 type BackendAuthResponse = {
   access_token?: string;
   refresh_token?: string;
+  session_id?: string;
   user?: BackendUser;
 };
 
@@ -42,7 +43,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(error, { status });
     }
 
-    const response = NextResponse.json({ user: data?.user }, { status });
+    let user: BackendUser | undefined = data?.user;
+    if (data?.access_token) {
+      const currentUser = await backendService.request<BackendUser>(
+        "/users/current",
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${data.access_token}`,
+          },
+          cache: "no-store",
+        },
+      );
+
+      if (currentUser.data) {
+        user = currentUser.data;
+      }
+    }
+
+    const response = NextResponse.json({ user }, { status });
 
     if (data?.access_token) {
       response.cookies.set({
@@ -59,6 +78,17 @@ export async function POST(request: NextRequest) {
       response.cookies.set({
         name: "refresh_token",
         value: data.refresh_token,
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+      });
+    }
+
+    if (data?.session_id) {
+      response.cookies.set({
+        name: "session_id",
+        value: data.session_id,
         httpOnly: true,
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production",

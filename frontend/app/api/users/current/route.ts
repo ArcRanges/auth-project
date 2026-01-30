@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { backendService } from "@/lib/backend/service";
+import { decodeJwtPayload } from "@/lib/jwt";
 
 const getAccessToken = (request: NextRequest): string | null => {
   const cookieAccessToken = request.cookies.get("access_token")?.value;
@@ -23,6 +24,15 @@ const clearAuthCookies = (response: NextResponse) => {
   });
   response.cookies.set({
     name: "refresh_token",
+    value: "",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  });
+  response.cookies.set({
+    name: "session_id",
     value: "",
     httpOnly: true,
     sameSite: "lax",
@@ -58,7 +68,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(error, { status });
     }
 
-    return NextResponse.json(data, { status });
+    const response = NextResponse.json(data, { status });
+
+    const cookieSessionId = request.cookies.get("session_id")?.value;
+    const decoded = accessToken
+      ? decodeJwtPayload<{ sid?: string }>(accessToken)
+      : null;
+    const tokenSessionId =
+      typeof decoded?.sid === "string" && decoded.sid.length > 0
+        ? decoded.sid
+        : null;
+
+    if (!cookieSessionId && tokenSessionId) {
+      response.cookies.set({
+        name: "session_id",
+        value: tokenSessionId,
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+      });
+    }
+
+    return response;
   } catch {
     return NextResponse.json(
       { message: "Internal server error" },
