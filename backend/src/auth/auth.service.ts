@@ -22,13 +22,14 @@ export class AuthService {
 
   async register(registerDto: RegisterDto): Promise<AuthResponseDto> {
     const user = await this.userService.create(registerDto);
-    const { accessToken, refreshToken } = await this.generateTokens(
+    const { accessToken, refreshToken, sessionId } = await this.generateTokens(
       user.id,
       user.email,
       undefined,
     );
     return new AuthResponseDto(
       accessToken,
+      sessionId,
       refreshToken,
       new UserResponseDto(user),
     );
@@ -39,13 +40,14 @@ export class AuthService {
     meta?: { ip?: string; userAgent?: string },
   ): Promise<AuthResponseDto> {
     const user = await this.validateUser(loginDto.email, loginDto.password);
-    const { accessToken, refreshToken } = await this.generateTokens(
+    const { accessToken, refreshToken, sessionId } = await this.generateTokens(
       user.id,
       user.email,
       meta,
     );
     return new AuthResponseDto(
       accessToken,
+      sessionId,
       refreshToken,
       new UserResponseDto(user),
     );
@@ -69,7 +71,7 @@ export class AuthService {
 
   async refreshAccessToken(
     refreshToken: string,
-  ): Promise<{ access_token: string }> {
+  ): Promise<{ access_token: string; session_id: string }> {
     try {
       if (await this.tokenBlacklistService.isBlacklisted(refreshToken)) {
         throw new UnauthorizedException('Invalid refresh token');
@@ -96,8 +98,8 @@ export class AuthService {
         refreshToken,
       });
 
-      const accessToken = this.generateAccessToken(user.id, user.email);
-      return { access_token: accessToken };
+      const accessToken = this.generateAccessToken(user.id, user.email, payload.sid);
+      return { access_token: accessToken, session_id: payload.sid };
     } catch (error) {
       if (
         error instanceof UserNotFoundException ||
@@ -139,9 +141,9 @@ export class AuthService {
     userId: string,
     email: string,
     meta?: { ip?: string; userAgent?: string },
-  ): Promise<{ accessToken: string; refreshToken: string }> {
-    const accessPayload = { sub: userId, email };
+  ): Promise<{ accessToken: string; refreshToken: string; sessionId: string }> {
     const sessionId = this.sessionService.newSessionId();
+    const accessPayload = { sub: userId, email, sid: sessionId };
     const refreshPayload = { sub: userId, email, sid: sessionId };
 
     const accessExpiresIn = (process.env.JWT_EXPIRES_IN ?? '1h') as any;
@@ -169,11 +171,11 @@ export class AuthService {
       userAgent: meta?.userAgent,
     });
 
-    return { accessToken, refreshToken };
+    return { accessToken, refreshToken, sessionId };
   }
 
-  private generateAccessToken(userId: string, email: string): string {
-    const payload = { sub: userId, email };
+  private generateAccessToken(userId: string, email: string, sessionId?: string): string {
+    const payload = sessionId ? { sub: userId, email, sid: sessionId } : { sub: userId, email };
     return this.jwtService.sign(payload, {
       expiresIn: (process.env.JWT_EXPIRES_IN ?? '1h') as any,
     });

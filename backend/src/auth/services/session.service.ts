@@ -82,6 +82,55 @@ export class SessionService {
     await this.redisService.setJson(this.sessionKey(sessionId), updated, ttlSeconds);
   }
 
+  async touchSessionIfStale(sessionId: string, minIntervalMs = 5 * 60 * 1000): Promise<void> {
+    const record = await this.getSessionRecord(sessionId);
+    if (!record) return;
+
+    const lastUsedAtMs = Date.parse(record.lastUsedAt);
+    if (Number.isFinite(lastUsedAtMs) && Date.now() - lastUsedAtMs < minIntervalMs) {
+      return;
+    }
+
+    const ttlSeconds = this.remainingTtlSeconds(record.expiresAtMs);
+    const updated: SessionRecord = {
+      ...record,
+      lastUsedAt: new Date().toISOString(),
+    };
+    await this.redisService.setJson(this.sessionKey(sessionId), updated, ttlSeconds);
+  }
+
+  async assertSessionActiveAndTouchIfStale(params: {
+    userId: string;
+    sessionId: string;
+    minIntervalMs?: number;
+  }): Promise<void> {
+    const record = await this.getSessionRecord(params.sessionId);
+    if (!record) {
+      throw new UnauthorizedException('Session revoked');
+    }
+
+    if (record.userId !== params.userId) {
+      throw new UnauthorizedException('Session revoked');
+    }
+
+    if (Date.now() >= record.expiresAtMs) {
+      throw new UnauthorizedException('Session revoked');
+    }
+
+    const minIntervalMs = params.minIntervalMs ?? 5 * 60 * 1000;
+    const lastUsedAtMs = Date.parse(record.lastUsedAt);
+    if (Number.isFinite(lastUsedAtMs) && Date.now() - lastUsedAtMs < minIntervalMs) {
+      return;
+    }
+
+    const ttlSeconds = this.remainingTtlSeconds(record.expiresAtMs);
+    const updated: SessionRecord = {
+      ...record,
+      lastUsedAt: new Date().toISOString(),
+    };
+    await this.redisService.setJson(this.sessionKey(params.sessionId), updated, ttlSeconds);
+  }
+
   async getUserSessions(userId: string): Promise<SessionResponseDto[]> {
     const sessionIds = await this.redisService.getSet(this.userSessionsKey(userId));
     if (sessionIds.length === 0) return [];
@@ -128,6 +177,15 @@ export class SessionService {
     await this.redisService.delete(this.userSessionsKey(userId));
   }
 
+  async deleteAllUserSessionsExcept(userId: string, keepSessionId: string): Promise<void> {
+    const sessionIds = await this.redisService.getSet(this.userSessionsKey(userId));
+    if (sessionIds.length === 0) return;
+
+    const toDelete = sessionIds.filter((id) => id !== keepSessionId);
+    await Promise.all(toDelete.map((sessionId) => this.redisService.delete(this.sessionKey(sessionId))));
+    await Promise.all(toDelete.map((sessionId) => this.redisService.removeFromSet(this.userSessionsKey(userId), sessionId)));
+  }
+
   async tryDeleteSessionFromRefreshToken(params: {
     userId: string;
     sessionId?: string;
@@ -161,4 +219,3 @@ export class SessionService {
     return `auth:session:user:${userId}`;
   }
 }
-

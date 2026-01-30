@@ -11,6 +11,7 @@ import {
   Req,
   Delete,
   Param,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -38,6 +39,7 @@ import { ApiRateLimit } from '../common/decorators/api-rate-limit.decorator';
 interface JwtPayloadUser {
   userId: string;
   email: string;
+  sessionId?: string;
 }
 
 @ApiTags('Authentication')
@@ -98,6 +100,10 @@ export class AuthController {
           type: 'string',
           example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
         },
+        session_id: {
+          type: 'string',
+          example: '8f94b7c8-3e4e-4d9d-86c7-8a5d3cb4e1e9',
+        },
       },
     },
   })
@@ -105,7 +111,7 @@ export class AuthController {
   @ApiRateLimit({ ttl: 60, limit: 10 })
   async refresh(
     @Body() refreshTokenDto: RefreshTokenDto,
-  ): Promise<{ access_token: string }> {
+  ): Promise<{ access_token: string; session_id: string }> {
     return this.authService.refreshAccessToken(refreshTokenDto.refreshToken);
   }
 
@@ -173,6 +179,20 @@ export class AuthController {
     @Param('sessionId') sessionId: string,
   ): Promise<void> {
     await this.sessionService.deleteUserSession(user.userId, sessionId);
+  }
+
+  @Post('sessions/revoke-others')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Revoke all sessions except the current session' })
+  @ApiResponse({ status: 204, description: 'Other sessions revoked' })
+  async revokeOtherSessions(@CurrentUser() user: JwtPayloadUser): Promise<void> {
+    const currentSessionId = user.sessionId;
+    if (!currentSessionId) {
+      throw new BadRequestException('Session ID missing from access token');
+    }
+    await this.sessionService.deleteAllUserSessionsExcept(user.userId, currentSessionId);
   }
 
   @Get('profile')
