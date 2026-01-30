@@ -21,6 +21,20 @@ export interface ApiError {
   error?: string;
 }
 
+export interface Session {
+  sessionId: string;
+  ip?: string;
+  userAgent?: string;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+}
+
+export interface CurrentSessionsResponse {
+  current_session_id: string | null;
+  sessions: Session[];
+}
+
 class ApiClient {
   private async request<T>(
     endpoint: string,
@@ -126,6 +140,24 @@ class ApiClient {
   async deleteCurrentUser(): Promise<void> {
     return this.request<void>("/users/current", {
       method: "DELETE",
+    });
+  }
+
+  async listCurrentSessions(): Promise<CurrentSessionsResponse> {
+    return this.request<CurrentSessionsResponse>("/auth/current/sessions", {
+      method: "GET",
+    });
+  }
+
+  async revokeSession(sessionId: string): Promise<void> {
+    return this.request<void>(`/auth/current/sessions/${encodeURIComponent(sessionId)}`, {
+      method: "DELETE",
+    });
+  }
+
+  async revokeOtherSessions(): Promise<void> {
+    return this.request<void>("/auth/current/sessions/revoke-others", {
+      method: "POST",
     });
   }
 }
