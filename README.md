@@ -170,6 +170,13 @@ NEXT_PUBLIC_API_URL=http://localhost:3000
 ✅ Swagger API documentation  
 ✅ Frontend integration ready
 
+## Future Updates
+
+- **Role Management:** Role-based access control (RBAC) with admin, user, and custom roles
+  - Admin-only access to user management features
+  - Permission-based API endpoint protection
+  - Role assignment and management interface
+
 ## License
 
 MIT
