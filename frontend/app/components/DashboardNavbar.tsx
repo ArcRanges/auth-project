@@ -17,13 +17,13 @@ const navItems: NavItem[] = [
   },
   {
     label: "Sessions",
-    href: "/dashboard/sessions",
-    isActive: (pathname) => pathname.startsWith("/dashboard/sessions"),
+    href: "/sessions",
+    isActive: (pathname) => pathname.startsWith("/sessions"),
   },
   {
     label: "Users",
-    href: "/dashboard/users",
-    isActive: (pathname) => pathname.startsWith("/dashboard/users"),
+    href: "/users",
+    isActive: (pathname) => pathname.startsWith("/users"),
   },
 ];
 
